@@ -44,13 +44,19 @@ class LlamaService {
 
       final config = MultimodalConfig(
         textModelPath: _currentTextModelPath!,
-        mmprojPath: _currentMmprojPath!,
+        //mmprojPath: _currentMmprojPath!,
         enableVision: true,
-        useGpuForMultimodal: true,
-        maxImageSize: 448,
+
+        projectionDim: 2560,
+
+        visionEncoder: 'clip',
+        // ✅【临时诊断】禁用GPU，使用更兼容的CPU模式
+        useGpuForMultimodal: false,
+        enableAudio: false, // 除非你有音频需求，否则建议关闭以节省资源
+        maxImageSize: 896,
       );
 
-      debugPrint('⚙️ 加载配置完成，开始加载模型...');
+      debugPrint('⚙️ 加载配置完成，开始加载模型 (CPU模式)...');
       final success = await _multimodal.loadMultimodalModel(config);
 
       if (success) {
@@ -114,7 +120,7 @@ class LlamaService {
 
       // ✅【关键修复】必须指定 type = MultimodalType.textAndImage！
       final input = MultimodalInput(
-        type: MultimodalType.mixed,  // 👈 必须添加！
+        type: MultimodalType.text,  // 👈 必须添加！
         text: prompt,
         imagePath: imagePath,
       );
@@ -154,7 +160,7 @@ class LlamaService {
 
       // ✅【关键修复】流式版本同样需要 type
       final input = MultimodalInput(
-        type: MultimodalType.mixed,  // 👈 必须添加！
+        type: MultimodalType.text,  // 👈 必须添加！
         text: prompt,
         imagePath: imagePath,
       );

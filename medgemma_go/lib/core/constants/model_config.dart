@@ -1,13 +1,16 @@
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
-import 'package:flutter/src/foundation/print.dart';
-
-import 'package:flutter/foundation.dart' show Platform;
+import 'package:flutter/foundation.dart';
 
 class ModelConfig {
   // 模型文件名常量
-  static const String textModelFileName = 'medgemma-4b-it_Q4_K_M.gguf';
-  static const String mmprojFileName = 'mmproj-medgemma-4b-it-F16.gguf';
+  // static const String textModelFileName = 'medgemma-4b-it_Q4_K_M.gguf';
+  // static const String mmprojFileName = 'mmproj-medgemma-4b-it-F16.gguf';
+  static const String textModelFileName = 'medgemma-4b-it-Q8_0.gguf';
+  static const String mmprojFileName = 'mmproj-medgemma-4b-it-Q8_0.gguf';
+
+
+  static const String modelSubDir = 'MedGemma'; // 模型子目录名
 
   /// ✅【Android】获取应用专属外部存储目录
   /// 路径: /storage/emulated/0/Android/data/<包名>/files/MedGemma/
@@ -15,44 +18,47 @@ class ModelConfig {
     try {
       final baseDir = await getExternalStorageDirectory();
       if (baseDir == null) {
-        throw Exception('getExternalStorageDirectory() 返回 null');
+        throw Exception('获取应用专属目录失败 (getExternalStorageDirectory() 返回 null)');
       }
-      final modelDir = Directory('${baseDir.path}/MedGemma');
+      // 在专属目录下创建模型子目录
+      final modelDir = Directory('${baseDir.path}/$modelSubDir');
+      
+      // 关键：如果目录不存在，就创建它
       if (!await modelDir.exists()) {
         await modelDir.create(recursive: true);
-        debugPrint('📁 创建模型目录: ${modelDir.path}');
+        debugPrint('📁 成功创建模型目录: ${modelDir.path}');
       }
       return modelDir;
     } catch (e) {
-      debugPrint('❌ 获取Android模型目录失败: $e');
+      debugPrint('❌ 获取或创建Android模型目录失败: $e');
       rethrow;
     }
   }
 
-  /// ✅【iOS降级方案】使用文档目录（外部存储在iOS不可用）
+  /// ✅【iOS】使用应用文档目录
   static Future<Directory> _getIOSModelDir() async {
     try {
       final baseDir = await getApplicationDocumentsDirectory();
-      final modelDir = Directory('${baseDir.path}/MedGemma');
+      final modelDir = Directory('${baseDir.path}/$modelSubDir');
       if (!await modelDir.exists()) {
         await modelDir.create(recursive: true);
-        debugPrint('📁 创建iOS模型目录: ${modelDir.path}');
+        debugPrint('📁 成功创建iOS模型目录: ${modelDir.path}');
       }
       return modelDir;
     } catch (e) {
-      debugPrint('❌ 获取iOS模型目录失败: $e');
+      debugPrint('❌ 获取或创建iOS模型目录失败: $e');
       rethrow;
     }
   }
 
-  /// ✅【统一入口】根据平台自动选择存储位置
+  /// ✅【统一入口】根据平台自动获取模型目录
   static Future<Directory> getModelDir() async {
     if (Platform.isAndroid) {
       return await _getAndroidModelDir();
     } else if (Platform.isIOS) {
       return await _getIOSModelDir();
     } else {
-      throw UnsupportedError('仅支持 Android 和 iOS 平台');
+      throw UnsupportedError('当前平台不受支持');
     }
   }
 
@@ -68,7 +74,7 @@ class ModelConfig {
     return '${dir.path}/$mmprojFileName';
   }
 
-  /// ✅ 检查模型文件是否存在
+  // ... (其他辅助方法，如 checkFilesExist, printFileSizes 等可以保留不变)
   static Future<bool> checkFilesExist() async {
     try {
       final textFile = File(await textModelPath);
@@ -86,6 +92,7 @@ class ModelConfig {
       return false;
     }
   }
+
 
   /// ✅ 获取文件大小（调试用）
   static Future<void> printFileSizes() async {
@@ -106,7 +113,8 @@ class ModelConfig {
     }
   }
 
-  /// ✅ 获取模型目录路径（用于ADB推送提示）
+
+
   static Future<String> getModelDirPathForAdb() async {
     final dir = await getModelDir();
     return dir.path;
