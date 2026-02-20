@@ -56,7 +56,7 @@ class Llama {
 
   final Map<String, _LlamaSlot> _slots = {};
   String _currentSlotId = "default";
-
+  
   int _nPredict = 32;
 
   bool _verbose = false;
@@ -71,19 +71,52 @@ class Llama {
   bool get isDisposed => _isDisposed;
 
   ContextParams? _contextParams;
+  //
+  // static llama_cpp get lib {
+  //   if (_lib == null) {
+  //     if (libraryPath != null) {
+  //       _lib = llama_cpp(DynamicLibrary.open(libraryPath!));
+  //     } else {
+  //       _lib = llama_cpp(DynamicLibrary.process());
+  //     }
+  //   }
+  //   return _lib!;
+  // }
+
 
   static llama_cpp get lib {
+
     if (_lib == null) {
-      if (libraryPath != null) {
-        _lib = llama_cpp(DynamicLibrary.open(libraryPath!));
-      } else {
-        _lib = llama_cpp(DynamicLibrary.process());
-      }
+      loadLibraries(libraryPath!);
+      _lib = llama_cpp.fromLookup(_mylookup);
     }
     return _lib!;
   }
 
   llama_cpp getLib() => _lib!;
+
+/////
+
+  static Pointer<T> _mylookup<T extends NativeType>(String symbolName) {
+    if (symbolName.startsWith('mtmd_')) {
+      return libmtmd.lookup<T>(symbolName);  // 从多模态库查找
+    }
+    return libllama.lookup<T>(symbolName);  // 从主库查找
+  }
+
+  // 在 llama.dart 中添加
+  static late final DynamicLibrary libllama;
+  static late final DynamicLibrary libmtmd;
+
+// 在初始化函数中加载
+  static void loadLibraries(String libraryPath) {
+    libllama = DynamicLibrary.open(libraryPath);  // libllama.so
+    libmtmd = DynamicLibrary.open('libmtmd.so');
+  }
+
+
+
+  ////
 
   Pointer<llama_context> get context => _slots[_currentSlotId]!.context;
 
@@ -386,6 +419,7 @@ class Llama {
       }
 
       try {
+        print("...start mtmd_context_params_default...");
         var mparam = lib.mtmd_context_params_default();
         mparam.use_gpu = modelParamsDart.nGpuLayers != 0;
         print("🔧 [DEBUG] C MTMD Context Params:");

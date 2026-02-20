@@ -20,6 +20,7 @@ class llama_cpp {
           lookup)
       : _lookup = lookup;
 
+
   int renameat(
     int arg0,
     ffi.Pointer<ffi.Char> arg1,
@@ -20302,6 +20303,11 @@ final class mtmd_context_params extends ffi.Struct {
 
   @ffi.Int()
   external int image_max_tokens;
+
+  // ✅ 新增：缺失的字段
+  external ggml_backend_sched_eval_callback cb_eval;
+
+  external ffi.Pointer<ffi.Void> cb_eval_user_data;
 }
 
 const int __bool_true_false_are_defined = 1;

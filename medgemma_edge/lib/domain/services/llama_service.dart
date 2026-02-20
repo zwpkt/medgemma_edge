@@ -44,13 +44,13 @@ class LlamaEdgeService {
       _loadingController.add(0.1);
 
       // 1. 先加载系统库
-      _preloadSystemLibs();
-      print("🚀 原生系统依赖链加载完成");
+      //_preloadSystemLibs();
+      //print("🚀 原生系统依赖链加载完成");
 
       // 2. 再加载你自己编译的依赖库 (顺序很重要)
-      _preloadYourCustomLibs();
+      //_preloadYourCustomLibs();
 
-      print("🚀 原生自编译依赖链加载完成");
+      //print("🚀 原生自编译依赖链加载完成");
       _loadingController.add(0.2);
 
       // 1. 检查模型文件
