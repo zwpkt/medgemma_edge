@@ -1,0 +1,46 @@
+name: medgemma_edge
+description: Edge AI Medical Assistant powered by MedGemma
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # ✅ 核心依赖：llama_cpp_dart (官方版本)
+#  llama_cpp_dart: ^0.2.0
+  # 改为本地路径引用
+  llama_cpp_dart:
+    path: ./packages/llama_cpp_dart-0.2.2
+
+  # 图片选择
+  image_picker: ^1.1.2
+  file_picker: ^8.1.7
+
+  # 文件路径
+  path_provider: ^2.1.5
+  path: ^1.9.0
+
+  # 权限处理
+  permission_handler: ^11.3.1
+
+  # 状态管理（简单够用）
+  provider: ^6.1.2
+
+  # UI辅助
+  loading_animation_widget: ^1.3.0
+
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter  # 必须确保这行存在
+  flutter_lints: ^3.0.0
+
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/icons/
