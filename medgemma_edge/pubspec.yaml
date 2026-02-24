@@ -32,6 +32,9 @@ dependencies:
 
   # UI辅助
   loading_animation_widget: ^1.3.0
+  
+  # Markdown渲染
+  flutter_markdown: ^0.7.1
 
 
 dev_dependencies:

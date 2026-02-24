@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/model_config.dart';
-import 'chat_screen.dart'; // 导入你的聊天页面
+import 'chat_screen.dart'; // Import your chat page
 
 class LoadingScreen extends StatefulWidget {
   const LoadingScreen({super.key});
@@ -10,7 +10,7 @@ class LoadingScreen extends StatefulWidget {
 }
 
 class _LoadingScreenState extends State<LoadingScreen> {
-  String _statusMessage = '正在初始化系统...';
+  String _statusMessage = 'Initializing system...';
   bool _hasError = false;
 
   @override
@@ -21,14 +21,14 @@ class _LoadingScreenState extends State<LoadingScreen> {
 
   Future<void> _startSetup() async {
     try {
-      // 1. 搬运模型 (外部 -> 内部)
-      setState(() => _statusMessage = '正在优化医疗模型资源...\n(首次运行约需 30 秒)');
-      // 这里会返回内部路径，但我们先确保搬运完成
+      // 1. Move models (external -> internal)
+      setState(() => _statusMessage = 'Optimizing medical model resources...\n(First run may take about 30 seconds)');
+      // This will return the internal path, but we first ensure the move is complete
       await ModelConfig.prepareInternalModels();
 
-      // 2. 检查完成后，跳转到 ChatScreen
-      // 注意：ChatScreen 内部的 initState 会调用 _llamaService.loadModel()
-      // 而 loadModel 内部应该使用 ModelConfig.prepareInternalModels() 返回的路径
+      // 2. After completion, navigate to ChatScreen
+      // Note: ChatScreen's initState will call _llamaService.loadModel()
+      // and loadModel should use the path returned by ModelConfig.prepareInternalModels()
       if (mounted) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => const ChatScreen()),
@@ -37,7 +37,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _statusMessage = '❌ 初始化失败\n请确保已通过 ADB 推送模型文件\n错误: $e';
+          _statusMessage = '❌ Initialization Failed\nPlease ensure model files are pushed via ADB\nError: $e';
           _hasError = true;
         });
       }
@@ -54,7 +54,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // 可以放一个你的 MedGemma Logo
+              // You can put your MedGemma Logo here
               const Icon(Icons.health_and_safety, size: 80, color: Colors.teal),
               const SizedBox(height: 40),
               if (!_hasError)
@@ -68,7 +68,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
               if (_hasError)
                 TextButton(
                   onPressed: () => _startSetup(),
-                  child: const Text('重试'),
+                  child: const Text('Retry'),
                 ),
             ],
           ),

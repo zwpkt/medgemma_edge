@@ -281,7 +281,8 @@ class Llama {
       String? mmprojPath,
       ModelParams? modelParamsDart,
       ContextParams? contextParamsDart,
-      SamplerParams? samplerParams) {
+      SamplerParams? samplerParams)
+  {
 
     print("🔍 === 开始初始化 Llama ===");
 

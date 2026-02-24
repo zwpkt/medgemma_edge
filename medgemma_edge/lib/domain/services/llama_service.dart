@@ -1,200 +1,148 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:llama_cpp_dart/llama_cpp_dart.dart';
 import '../../core/constants/model_config.dart';
+import 'dart:ui' as ui;
+import 'package:image/image.dart' as img;
 
 
-/// MedGemma Edge 核心推理服务
-/// 基于 llama_cpp_dart 实现，支持多模态和离线推理
+/// Core inference service for MedGemma Edge
+/// Based on llama_cpp_dart, supports multimodal and offline inference
 class LlamaEdgeService {
   static final LlamaEdgeService _instance = LlamaEdgeService._internal();
   factory LlamaEdgeService() => _instance;
   LlamaEdgeService._internal();
 
-  // ✅ 核心：Managed Isolate (Flutter友好，非阻塞)
+  // ✅ Core: Managed Isolate (Flutter-friendly, non-blocking)
   LlamaParent? _llamaParent;
-  LlamaScope? _currentScope;  // ✅ 保存当前请求的 scope
+  LlamaScope? _currentScope;  // ✅ Holds the current request's scope
 
-  // 状态
+  // Status
   bool _isInitialized = false;
   bool get isInitialized => _isInitialized;
   bool get isModelLoaded => _llamaParent != null;
 
-  // 流式响应
+  // Response Stream
   final _responseController = StreamController<String>.broadcast();
   Stream<String> get responseStream => _responseController.stream;
 
-  // 加载进度
+  // Loading Progress
   final _loadingController = StreamController<double>.broadcast();
   Stream<double> get loadingStream => _loadingController.stream;
 
-  // 错误信息
+  // Error Stream
   final _errorController = StreamController<String>.broadcast();
   Stream<String> get errorStream => _errorController.stream;
 
-  /// 加载多模态模型（Edge AI 核心）
+  /// Load multimodal model (Core Edge AI)
   Future<bool> loadModel() async {
     try {
-
-
       _checkMemory();
 
       _loadingController.add(0.1);
 
-      // 1. 先加载系统库
+      // 1. Preload system libraries first
       //_preloadSystemLibs();
-      //print("🚀 原生系统依赖链加载完成");
+      //print("🚀 Native system dependency chain loaded");
 
-      // 2. 再加载你自己编译的依赖库 (顺序很重要)
+      // 2. Then preload your custom compiled libraries (order is important)
       //_preloadYourCustomLibs();
 
-      //print("🚀 原生自编译依赖链加载完成");
+      //print("🚀 Native custom compiled dependency chain loaded");
       _loadingController.add(0.2);
 
-      // 1. 检查模型文件
-      print('🔍 [MedGemma Edge] 检查模型文件...');
+      // 1. Check for model files
+      print('🔍 [MedGemma Edge] Checking for model files...');
       final filesExist = await ModelConfig.checkFilesExist();
       if (!filesExist) {
         final adbCmd = await ModelConfig.getAdbPushCommand();
-        _errorController.add('模型文件不存在\n$adbCmd');
+        _errorController.add('Model files not found\n$adbCmd');
         _loadingController.add(-1);
         return false;
       }
 
       _loadingController.add(0.3);
 
-      // 2. 获取模型路径
+      // 2. Get model paths
       final textPath = await ModelConfig.textModelPath;
       final mmprojPath = await ModelConfig.mmprojPath;
 
-      print('📦 [MedGemma Edge] 加载配置:');
-      print('   - 文本模型: $textPath； size：${File(textPath).lengthSync()}');
-      print('   - 投影器: $mmprojPath； size：${File(mmprojPath).lengthSync()}');
+      print('📦 [MedGemma Edge] Loading configuration:');
+      print('   - Text Model: $textPath； size：${File(textPath).lengthSync()}');
+      print('   - Projector: $mmprojPath； size：${File(mmprojPath).lengthSync()}');
 
 
-      // 3. 配置模型参数（Edge AI 优化）
+      // 3. Configure model parameters (Edge AI optimization)
       final loadCommand = LlamaLoad(
         path: textPath,
         modelParams: ModelParams()
-          ..nGpuLayers = 0              // 99: 尽可能使用 GPU; 0: CPU
-          ..mainGpu = -1  // 明确告诉系统不使用任何 GPU
-          ..useMemorymap = true          // ✅ 原 useMmap → useMemorymap, true->false
-          ..useMemoryLock = false        // ✅ 原 useMlock → useMemoryLock
+          ..nGpuLayers = 0              // 99: Use GPU as much as possible; 0: CPU
+          ..mainGpu = -1  // -1 explicitly tells the system not to use any GPU
+          ..useMemorymap = true          // ✅ Original useMmap → useMemorymap, true. This allows the Android system to manage memory more flexibly, reducing I/O blocking during loading
+          ..useMemoryLock = false        // ✅ Original useMlock → useMemoryLock
           ..checkTensors = false
           ..useExtraBufts = false
           ..noHost = false,
         contextParams: ContextParams()
-          ..nCtx = 512    //2048
-          ..nBatch = 512
+          ..nCtx = 1024    //2048
+          ..nBatch = 512    //Set to 1024. For single-user chat, this provides a stable Time to First Token (TTFT).
+          ..nUbatch = 64  // If not set, use system default 512
           ..nThreads = 4
+          ..nThreadsBatch = 4
+          //..nPredict=256    // Truncates when token limit is exceeded. Use with caution.
           ..nSeqMax = 1,
-        samplingParams: SamplerParams()  // ✅ 类名正确
-          ..temp = 0.7                  // ✅ 参数名正确
-          ..topK = 40
-          ..topP = 0.95
-          ..penaltyRepeat = 1.1,        // ✅ 参数名正确
-        mmprojPath: mmprojPath,  // ✅ 多模态：传入投影器路径！
+        samplingParams: SamplerParams()  // ✅ Class name is correct
+          ..temp = 0.3        // ✅ A temperature of 0.7 is too high for a medical model. 0.2-0.4 makes the output more deterministic and medically accurate.
+          ..topK = 20   // When selecting the next word, only consider the top K most probable words
+          ..minP = 0.05 // The probability of any selected word must be at least Min-P times the probability of the most probable word
+          ..topP = 0.80 // Whether the "sum of probabilities" of these words has reached topP
+          ..penaltyRepeat = 1.2,        // ✅ Increase to 1.15 - 1.2 to prevent repetitive answers.
+        mmprojPath: mmprojPath,  // ✅ Multimodal: Pass the projector path!
         verbose: true,
       );
 
       _loadingController.add(0.6);
 
-      // 关键修改：在创建 LlamaParent 之前，先设置静态变量； 先设置主 Isolate 的 libraryPath
+      // Key change: Set the static variable before creating LlamaParent; set the main Isolate's libraryPath first
       Llama.libraryPath = 'libllama.so';
-      print('📌 [主Isolate] libraryPath 已设置为: libllama.so');
+      print('📌 [MainIsolate] libraryPath has been set to: libllama.so');
 
-      // try {
-      //   print('🔍 开始详细诊断...');
-      //
-      //   // 1. 先设置 libraryPath
-      //   Llama.libraryPath = 'libllama.so';
-      //
-      //   // 2. 手动加载库
-      //   final handle = DynamicLibrary.open('libllama.so');
-      //   print('✅ 成功打开 libllama.so');
-      //
-      //   // 3. 检查关键符号是否存在
-      //   final symbols = [
-      //     'llama_model_default_params',
-      //     'llama_context_default_params',
-      //     'llama_init_from_file',
-      //     'llama_new_context_with_model',
-      //     'llama_n_ctx',
-      //     'llama_n_batch',
-      //     'llama_decode',
-      //     'llama_free',
-      //     'llama_backend_init',
-      //     'llama_load_session_file',
-      //     'llama_save_session_file',
-      //     'llama_get_state_size',
-      //     'llama_copy_state_data',
-      //     'llama_set_state_data'
-      //   ];
-      //
-      //   for (final symbol in symbols) {
-      //     try {
-      //       handle.lookup(symbol);
-      //       print('  ✅ 符号 $symbol 存在');
-      //     } catch (e) {
-      //       print('  ❌ 符号 $symbol 缺失: $e');
-      //     }
-      //   }
-      //
-      // } catch (e) {
-      //   print('❌ 库加载诊断失败: $e');
-      // }
-
-      // 4. 初始化 LlamaParent
-      print('🚀 [MedGemma Edge] 初始化推理引擎...');
+      // 4. Initialize LlamaParent
+      print('🚀 [MedGemma Edge] Initializing inference engine...');
       _llamaParent = LlamaParent(loadCommand);
-      print('🚀 [MedGemma Edge] 正在加载模型...');
-      if (_llamaParent != null){
-        //todo
-      }
+      print('🚀 [MedGemma Edge] Loading model...');
 
       print(" Llama.libraryPath${ Llama.libraryPath}");
       await _llamaParent!.init();
-      print("after init");
 
-      print('🚀 [MedGemma Edge] 模型加载完成');
+      print('🚀 [MedGemma Edge] Model loading complete');
 
       _loadingController.add(0.9);
 
-      // 5. 设置流式监听
-      _llamaParent!.stream.listen(
-            (response) {
-          if (kDebugMode) print('📝 [推理] $response');
-          _responseController.add(response);
-        },
-        onError: (error) {
-          print('❌ [推理错误] $error');
-          _errorController.add('推理错误: $error');
-        },
-        onDone: () {
-          print('✅ [推理完成]');
-        },
-      );
+      //Create scope
+      _currentScope=_llamaParent?.getScope();
 
       _isInitialized = true;
       _loadingController.add(1.0);
 
-      print('✅ [MedGemma Edge] 模型加载成功！');
-      print('   - 设备: ${Platform.operatingSystem}');
-      print('   - 模式: 完全离线 | GPU加速 | 边缘计算');
+      print('✅ [MedGemma Edge] Model loaded successfully!');
+      print('   - Device: ${Platform.operatingSystem}');
+      print('   - Mode: Fully Offline | GPU Acceleration | Edge Computing');
 
       return true;
     } catch (e, s) {
-      print('❌ [MedGemma Edge] 加载失败: $e\n$s');
-      _errorController.add('加载失败: $e');
+      print('❌ [MedGemma Edge] Loading failed: $e\n$s');
+      _errorController.add('Loading failed: $e');
       _loadingController.add(-1);
       return false;
     }
   }
 
 
-  // 在调用 _initializeLlama 前添加内存检查
+  // Add memory check before calling _initializeLlama
   Future<bool> _checkMemory() async {
     try {
       final file = File('/proc/meminfo');
@@ -205,29 +153,29 @@ class LlamaEdgeService {
 
         for (final line in lines) {
           if (line.startsWith('MemAvailable:')) {
-            memAvailable = int.parse(line.split(RegExp(r'\s+'))[1]) ~/ 1024; // 转 MB
-            print('📊 系统可用内存: $memAvailable MB');
+            memAvailable = int.parse(line.split(RegExp(r'\s+'))[1]) ~/ 1024; // to MB
+            print('📊 System available memory: $memAvailable MB');
           } else if (line.startsWith('MemTotal:')) {
             memTotal = int.parse(line.split(RegExp(r'\s+'))[1]) ~/ 1024;
-            print('📊 系统总内存: $memTotal MB');
+            print('📊 System total memory: $memTotal MB');
           }
         }
 
-        // 模型需要约 3GB 空闲
+        // Model requires about 3GB of free memory
         if (memAvailable < 3000) {
-          print('⚠️ 警告：可用内存不足 3GB，模型加载可能失败');
+          print('⚠️ Warning: Less than 3GB of available memory, model loading may fail');
           return false;
         }
       }
 
-      // 进程内存
+      // Process memory
       final rss = ProcessInfo.currentRss ~/ (1024 * 1024);
-      print('📊 进程当前 RSS: $rss MB');
+      print('📊 Process current RSS: $rss MB');
 
       return true;
     } catch (e) {
-      print('⚠️ 无法获取内存信息: $e');
-      return true; // 继续尝试
+      print('⚠️ Unable to get memory information: $e');
+      return true; // Continue trying
     }
   }
 
@@ -241,117 +189,192 @@ class LlamaEdgeService {
   }
 
   void _preloadYourCustomLibs() {
-    // 按依赖顺序手动点火
+    // Manually load in dependency order
     DynamicLibrary.open('libc++_shared.so');
     DynamicLibrary.open('libomp.so');
     DynamicLibrary.open('libggml.so');
     DynamicLibrary.open('libggml-base.so');
     DynamicLibrary.open('libggml-cpu.so');
-    // 注意：libllama.so 通常由插件内部加载，但手动加载一次可以提前暴露符号错误
+    // Note: libllama.so is usually loaded internally by the plugin, but loading it manually once can expose symbol errors early
     DynamicLibrary.open('libmtmd.so');
     DynamicLibrary.open('libllama.so');
 
   }
 
-  /// 纯文本生成
+  // It's recommended to define this formatter object as a class member to avoid repeated creation
+  final _gemmaFormatter = GemmaFormat(systemPrefix: 'You are a professional doctor. Please answer briefly and avoid nonsense.');
+
+  /// Plain text generation
   void generateText(String prompt) {
     if (!_isInitialized || _llamaParent == null) {
-      _errorController.add('模型未初始化');
+      _errorController.add('Model not initialized');
       return;
     }
 
-    print('📝 [用户] $prompt');
-    // 保存返回的 scope，用于后续停止
-    Future<String>? _currentPromptId;  // 保存当前请求的 promptId
-    _currentPromptId= _llamaParent!.sendPrompt(prompt);
+    // 4. [Core Improvement]: Use GemmaFormat object to generate standard Prompt
+    // It will be automatically wrapped as: <start_of_turn>user\n$prompt<end_of_turn>\n<start_of_turn>model\n
+    final String formattedPrompt = _gemmaFormatter.formatPrompt(prompt);
+    print('📝 [User] $formattedPrompt');
 
 
+    // Listen for responses via scope
+    _currentScope!.stream.listen(
+          (response) {
+        _responseController.add(response);
+      },
+      onError: (error) {
+        _errorController.add('Generation error: $error');
+      },
+      onDone: () {
+        print('✅ [Text generation complete]');
+        stopGeneration();
+      },
+    );
 
-    // 通过 scope 监听响应
-    // _currentScope!.stream.listen(
-    //       (response) {
-    //     _responseController.add(response);
-    //   },
-    //   onError: (error) {
-    //     _errorController.add('生成错误: $error');
-    //   },
-    //   onDone: () {
-    //     _currentScope = null;  // 生成完成，清理 scope
-    //   },
-    // );
+    // 6. Call the plugin's correct multimodal sending method
+    // Note: We pass formattedPrompt to the underlying layer
+    _llamaParent!.sendPrompt(
+        formattedPrompt,
+        scope: _currentScope
+    );
+
   }
 
-  /// 多模态生成（文本 + 图像）- Edge AI 核心功能
+  /// Multimodal generation (text + image) - Core Edge AI feature
   Future<void> generateWithImage({
     required String prompt,
     required File imageFile,
   }) async {
+    final stopwatch = Stopwatch()..start();
+
     if (!_isInitialized || _llamaParent == null) {
-      _errorController.add('模型未初始化');
+      _errorController.add('Model not initialized');
       return;
     }
 
     try {
-      print('🖼️ [MedGemma Edge] 多模态推理开始');
-      print('   - 提示词: $prompt');
-      print('   - 图像: ${imageFile.path} (${await imageFile.length()} bytes)');
+      print('🖼️ [MedGemma Edge] Multimodal inference started');
+      print('   - Prompt: $prompt');
+      print('   - Image: ${imageFile.path} (${await imageFile.length()} bytes)');
 
-      // 读取图像文件
-      final imageBytes = await imageFile.readAsBytes();
+      // Record image preprocessing time
+      final preprocessStart = stopwatch.elapsedMilliseconds;
+      final resizedImage = await preprocessMedicalImage(imageFile);
+      // 5. Construct image object (use fromFile to avoid full memory copy between Isolates)
+      final llamaImage = LlamaImage.fromFile(resizedImage);
+      print('   ⏱️ Image preprocessing time: ${stopwatch.elapsedMilliseconds - preprocessStart}ms');
 
-      // 构建多模态输入
-      // 注意：llama_cpp_dart 通过特殊格式支持图像
-      // 格式: <image>base64编码的图像数据</image>\n文本提示词
-      final base64Image = imageBytes.isNotEmpty ?
-      'data:image/jpeg;base64,${base64Encode(imageBytes)}' : '';
 
-      final multimodalPrompt = '''
-<image>
-$base64Image
-</image>
-$prompt
-''';
+      // 3. Build multimodal text input
+      // Must include the <image> placeholder so the model knows where to insert visual features
+      final String userContent = "<image>\n$prompt";
 
-      _llamaParent!.sendPrompt(multimodalPrompt);
+      // 4. [Core Improvement]: Use GemmaFormat object to generate standard Prompt
+      // It will be automatically wrapped as: <start_of_turn>user\n<image>\n$prompt<end_of_turn>\n<start_of_turn>model\n
+      final formatStart = stopwatch.elapsedMilliseconds;
+      final String formattedPrompt = _gemmaFormatter.formatPrompt(userContent);
+      print('   📝 Formatted Prompt: $formattedPrompt');
+      print('   ⏱️ Prompt formatting time: ${stopwatch.elapsedMilliseconds - formatStart}ms');
+
+      _currentScope!.stream.listen(
+            (response) {
+              print('   📥 Received token (elapsed time ${stopwatch.elapsedMilliseconds}ms)');
+          _responseController.add(response);
+        },
+        onError: (error) {
+          print('❌ Error (${stopwatch.elapsedMilliseconds}ms): $error');
+          _errorController.add('Multimodal generation error: $error');
+          _currentScope = null;
+        },
+        onDone: () {
+          print('✅ Complete (total time: ${stopwatch.elapsedMilliseconds}ms)');
+          stopGeneration();
+        },
+      );
+
+      // Record time before sending
+      final sendStart = stopwatch.elapsedMilliseconds;
+      print('   📤 Sending to the underlying model...');
+      // 6. Call the plugin's correct multimodal sending method
+      // Note: We pass formattedPrompt to the underlying layer
+      await _llamaParent!.sendPromptWithImages(
+        formattedPrompt,
+        [llamaImage],
+        scope: _currentScope,
+      );
+      print('   ✅ Sending complete (elapsed time: ${stopwatch.elapsedMilliseconds - sendStart}ms)');
 
     } catch (e) {
-      print('❌ [多模态错误] $e');
-      _errorController.add('图像处理失败: $e');
+      print('❌ [Multimodal Error] $e');
+      _errorController.add('Image processing failed: $e');
     }
   }
 
-  /// ✅【核心】停止生成
-  void stopGeneration() {
-    _currentScope = _llamaParent!.getScope();
+  Future<File> preprocessMedicalImage(File originalFile) async {
+    // 1. Read the original image
+    final bytes = await originalFile.readAsBytes();
+    final image = img.decodeImage(bytes);
+
+    if (image == null) return originalFile;
+
+    // 2. Resize to the model's preferred 224x224 
+    // For medical images, linear interpolation is recommended to keep edges smooth
+    final resized = img.copyResize(
+        image,
+        width: 112,
+        height: 112,
+        interpolation: img.Interpolation.linear
+    );
+
+    // 3. Save back to a cache directory
+    final tempDir = originalFile.parent.path;
+    final fileName = "preprocessed_${DateTime.now().millisecondsSinceEpoch}.jpg";
+    final preprocessedFile = File('$tempDir/$fileName');
+
+    // Save as high-quality JPEG to reduce file size
+    await preprocessedFile.writeAsBytes(img.encodeJpg(resized, quality: 90));
+
+    print("✅ Image preprocessing complete: from ${bytes.length} bytes reduced to ${preprocessedFile.lengthSync()} bytes");
+    return preprocessedFile;
+  }
+
+  /// ✅ [Core] Stop Generation
+  Future<void> stopGeneration() async {
     if (_currentScope != null) {
-      _currentScope!.stop();  // 通过 scope 停止
+      // 1. Notify the underlying scope to stop (sets an internal cancel flag)
+      await _currentScope!.stop(alsoCancelQueued: true);
+
+      // 2. Key: Clear the local queue to prevent the next one from starting automatically after stopping
+      await _llamaParent?.stop();
+
+      // 3. Set the current scope to null to ensure subsequent stream listeners recognize it as invalid
       _currentScope = null;
-      print('⏹️ [生成已停止]');
+      _currentScope=_llamaParent?.getScope();
+
+      // 4. Update status
+      print('⏹️ [Generation command issued, forcing loop termination]');
     } else {
-      print('⚠️ [没有正在进行的生成任务]');
+      // Extra safety measure: directly use llamaParent's method (if supported by the plugin)
+      // _llamaParent?.cancelAll();
+      print('⚠️ [No active scope detected]');
     }
   }
 
-  /// 卸载模型（释放内存）
+  /// Unload model (release memory)
   Future<void> unloadModel() async {
     if (_llamaParent != null) {
       await _llamaParent!.dispose();
       _llamaParent = null;
       _isInitialized = false;
-      print('✅ [MedGemma Edge] 模型已卸载');
+      print('✅ [MedGemma Edge] Model unloaded');
     }
   }
 
-  /// 释放资源
+  /// Release resources
   void dispose() {
     unloadModel();
     _responseController.close();
     _loadingController.close();
     _errorController.close();
-  }
-
-  /// 辅助：base64编码
-  String base64Encode(List<int> bytes) {
-    return String.fromCharCodes(bytes);
   }
 }

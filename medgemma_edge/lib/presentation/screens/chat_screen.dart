@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../domain/services/llama_service.dart';
@@ -19,7 +20,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   bool _isLoading = false;
   bool _isModelReady = false;
-  String _modelStatus = '🔄 初始化中...';
+  String _modelStatus = '🔄 Initializing...';
   double _loadProgress = 0.0;
 
   late final LlamaEdgeService _llamaService;
@@ -33,7 +34,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _setupListeners() {
-    // 流式响应
+    // Stream response
     _llamaService.responseStream.listen((token) {
       if (mounted) {
         setState(() {
@@ -44,30 +45,37 @@ class _ChatScreenState extends State<ChatScreen> {
           }
         });
       }
+    }, onDone: () {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     });
 
-    // 加载进度
+    // Loading progress
     _llamaService.loadingStream.listen((progress) {
       if (mounted) {
         setState(() {
           _loadProgress = progress;
           if (progress == 1.0) {
-            _modelStatus = '✅ 模型就绪';
+            _modelStatus = '✅ Model Ready';
             _isModelReady = true;
           } else if (progress < 0) {
-            _modelStatus = '❌ 加载失败';
+            _modelStatus = '❌ Load Failed';
           } else {
-            _modelStatus = '🔄 加载模型 ${(progress * 100).toInt()}%';
+            _modelStatus = '🔄 Loading Model ${(progress * 100).toInt()}%';
           }
         });
       }
     });
 
-    // 错误信息
+    // Error messages
     _llamaService.errorStream.listen((error) {
       if (mounted) {
         setState(() {
           _modelStatus = '❌ $error';
+          _isLoading = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(error), backgroundColor: Colors.red),
@@ -81,7 +89,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (mounted && success) {
       setState(() {
         _isModelReady = true;
-        _modelStatus = '✅ MedGemma Edge 已就绪';
+        _modelStatus = '✅ MedGemma Edge is ready';
       });
     }
   }
@@ -110,7 +118,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final text = _textController.text.trim();
     if (text.isEmpty && _selectedImage == null) return;
 
-    // 添加用户消息
+    // Add user message
     setState(() {
       _messages.add(ChatMessage(
         content: text,
@@ -121,18 +129,25 @@ class _ChatScreenState extends State<ChatScreen> {
       _isLoading = true;
     });
 
-    // 调用模型
+    // Call model
     if (_selectedImage != null) {
       await _llamaService.generateWithImage(
-        prompt: text.isEmpty ? '请详细描述这张医疗图像中的发现。' : text,
+        prompt: text.isEmpty ? 'Describe the findings in this medical image in detail.' : text,
         imageFile: _selectedImage!,
       );
       setState(() => _selectedImage = null);
     } else {
       _llamaService.generateText(text);
     }
+  }
 
-    setState(() => _isLoading = false);
+  void _stopMessage() {
+    _llamaService.stopGeneration();
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   @override
@@ -151,7 +166,7 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       body: Column(
         children: [
-          // 状态栏
+          // Status bar
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             color: _modelStatus.contains('✅')
@@ -182,7 +197,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
 
-          // 消息列表
+          // Message list
           Expanded(
             child: ListView.builder(
               reverse: true,
@@ -195,7 +210,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
 
-          // 图片预览
+          // Image preview
           if (_selectedImage != null)
             Container(
               height: 100,
@@ -229,7 +244,7 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
 
-          // 输入栏
+          // Input bar
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
@@ -238,7 +253,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
             child: Row(
               children: [
-                // 图片按钮
+                // Image button
                 PopupMenuButton<String>(
                   icon: const Icon(Icons.add_photo_alternate),
                   onSelected: (value) {
@@ -248,21 +263,21 @@ class _ChatScreenState extends State<ChatScreen> {
                   itemBuilder: (context) => [
                     const PopupMenuItem(
                       value: 'gallery',
-                      child: Row(children: [Icon(Icons.photo_library), Text('从相册选择')]),
+                      child: Row(children: [Icon(Icons.photo_library), Text('From Gallery')]),
                     ),
                     const PopupMenuItem(
                       value: 'camera',
-                      child: Row(children: [Icon(Icons.camera_alt), Text('拍照')]),
+                      child: Row(children: [Icon(Icons.camera_alt), Text('Take Photo')]),
                     ),
                   ],
                 ),
 
-                // 文本输入
+                // Text input
                 Expanded(
                   child: TextField(
                     controller: _textController,
                     decoration: InputDecoration(
-                      hintText: _selectedImage != null ? '输入问题或描述...' : '输入消息...',
+                      hintText: _selectedImage != null ? 'Enter question or description...' : 'Enter message...',
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(24),
                         borderSide: BorderSide.none,
@@ -271,23 +286,23 @@ class _ChatScreenState extends State<ChatScreen> {
                       fillColor: Colors.grey[100],
                     ),
                     maxLines: null,
-                    onSubmitted: (_) => _sendMessage(),
+                    onSubmitted: (_) => _isModelReady && !_isLoading ? _sendMessage() : null,
                   ),
                 ),
 
-                // 发送按钮
+                // Send/Stop button
                 const SizedBox(width: 8),
                 CircleAvatar(
-                  backgroundColor: _isModelReady ? Colors.teal : Colors.grey,
+                  backgroundColor: _isModelReady
+                      ? (_isLoading ? Colors.red : Colors.teal)
+                      : Colors.grey,
                   child: IconButton(
                     icon: _isLoading
-                        ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                    )
+                        ? const Icon(Icons.stop, color: Colors.white)
                         : const Icon(Icons.send, color: Colors.white),
-                    onPressed: _isModelReady && !_isLoading ? _sendMessage : null,
+                    onPressed: _isModelReady
+                        ? (_isLoading ? _stopMessage : _sendMessage)
+                        : null,
                   ),
                 ),
               ],
@@ -299,6 +314,39 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildMessageBubble(ChatMessage message) {
+    final messageContent = SelectableRegion(
+      focusNode: FocusNode(),
+      selectionControls: materialTextSelectionControls,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (message.imagePath != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.file(
+                  File(message.imagePath!),
+                  height: 150,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+          message.isUser
+              ? SelectableText(
+                  message.content,
+                  style: const TextStyle(color: Colors.white),
+                )
+              : MarkdownBody(
+                  data: message.content,
+                  styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+                    p: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.black87),
+                  ),
+                ),
+        ],
+      ),
+    );
+
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -318,29 +366,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 color: message.isUser ? Colors.teal : Colors.grey[200],
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (message.imagePath != null)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.file(
-                          File(message.imagePath!),
-                          height: 150,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                    ),
-                  Text(
-                    message.content,
-                    style: TextStyle(
-                      color: message.isUser ? Colors.white : Colors.black87,
-                    ),
-                  ),
-                ],
-              ),
+              child: messageContent,
             ),
           ),
           if (message.isUser) const SizedBox(width: 8),
@@ -360,25 +386,25 @@ class _ChatScreenState extends State<ChatScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('MedGemma Edge'),
-        content: Column(
+        content: const Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('基于 MedGemma 的边缘AI医疗助手', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Text('模型: medgemma-4b-it-Q8_0 (4.13GB)'),
-            Text('投影器: mmproj-F16 (851MB)'),
-            Text('推理引擎: llama_cpp_dart v0.2.3'),
-            const SizedBox(height: 8),
-            const Text('🔋 Edge AI 特性:'),
-            const Text('  • 完全离线运行'),
-            const Text('  • 端侧GPU加速'),
-            const Text('  • 隐私保护，无需联网'),
-            const Text('  • 支持医疗图像分析'),
+            Text('Edge AI Medical Assistant based on MedGemma', style: TextStyle(fontWeight: FontWeight.bold)),
+            SizedBox(height: 8),
+            Text('Model: medgemma-4b-it-Q8_0 (4.13GB)'),
+            Text('Projector: mmproj-F16 (851MB)'),
+            Text('Inference Engine: llama_cpp_dart v0.2.3'),
+            SizedBox(height: 8),
+            Text('🔋 Edge AI Features:'),
+            Text('  • Runs completely offline'),
+            Text('  • On-device GPU acceleration'),
+            Text('  • Privacy-protected, no internet required'),
+            Text('  • Supports medical image analysis'),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('关闭')),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
         ],
       ),
     );
