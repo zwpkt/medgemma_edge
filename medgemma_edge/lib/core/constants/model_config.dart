@@ -113,13 +113,13 @@ class ModelConfig {
 
   /// Text model path
   static Future<String> get textModelPath async {
-    final dir = await getModelDir(isInternal: true);
+    final dir = await getModelDir(isInternal: false);
     return '${dir.path}/$textModelFileName';
   }
 
   /// Projector path
   static Future<String> get mmprojPath async {
-    final dir = await getModelDir(isInternal: true);
+    final dir = await getModelDir(isInternal: false);
     return '${dir.path}/$mmprojFileName';
   }
 

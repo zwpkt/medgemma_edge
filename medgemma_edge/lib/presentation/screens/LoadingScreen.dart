@@ -24,7 +24,8 @@ class _LoadingScreenState extends State<LoadingScreen> {
       // 1. Move models (external -> internal)
       setState(() => _statusMessage = 'Optimizing medical model resources...\n(First run may take about 30 seconds)');
       // This will return the internal path, but we first ensure the move is complete
-      await ModelConfig.prepareInternalModels();
+      // Use the path of getExternalStorageDirectory(), not the internal path and not copying
+      // ModelConfig.prepareInternalModels();
 
       // 2. After completion, navigate to ChatScreen
       // Note: ChatScreen's initState will call _llamaService.loadModel()
